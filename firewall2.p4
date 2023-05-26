@@ -10,11 +10,9 @@ Firewall must also reflect for the purpose of checking that certain packets have
 /*************************************************************************
 *************************** SETUP  ***************************************
 *************************************************************************/
-// Define a register to count the number of packets sent from a single source address
-register Packet_counter {
-	width : 8; 		//can store 8 bits (and so count to 256)
-	init : 0;		//initial value of 0
-// Note: the register can only count 1 ip address at a time	
+// Define a counter to count the number of packets sent from a single source address
+
+register<bit<8>>(1) c;
 	
 	
 /*************************************************************************
@@ -31,7 +29,7 @@ header ethernet_t {
 }
 
 struct metadata {
-    /* empty */
+
 }
 
 struct headers {
@@ -72,29 +70,24 @@ control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
 	
-	
-// reflect the terms to the original machine so that drops can be measured 
-    
+// reflect the terms to the original machine so that drops can be measured  
     action swap_mac_addresses() {
        //swap source and destination addresses:
        macAddr_t tmp_mac;
-       tmp_mac = hdr.ethernet.srcAddr;
-       hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
-       hdr.ethernet.dstAddr = tmp_mac;
+       tmp_mac = hdr.ethernet.dstAddr;
+       hdr.ethernet.dstAddr = hdr.ethernet.srcAddr;
+       hdr.ethernet.srcAddr = tmp_mac;
        //send it back to the same port
-       standard_metadata.egress_spec = standard_metadata.ingress_port;
-       //Look up the packet count for the srcAddr and increase by 1
-       packet_counter.increment(tmp_mac, 1)
+       standard_metadata.egress_spec = standard_metadata. ingress_port;
+
     }
 
-// drop    
+// drop packets  
     action drop() {
         mark_to_drop(standard_metadata);
     }
 
-// counter
-    
-    
+       
 // table 1: swap and refelct adresses from allowed source
     table src_mac_swap {
         key = {
@@ -110,10 +103,18 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
-        if (hdr.ethernet.isValid()) {   //check if header fits the format of ethernet
-            src_mac_swap.apply();	// apply table 1
-            
-            
+        if (hdr.ethernet.isValid()) {   		//check if header fits the format of ethernet
+        	bit<8> egg;
+        	bit<32> count;
+        	c.read(egg,0);
+        	c.write(0,egg+1);
+        	//egg = c.read(0);				//increases packet count by 1
+        	if (egg <= 100) {		//check if the source has sent less than 100 packets
+            		src_mac_swap.apply();		// apply table 1 if less than 100 packets sent
+            	}	
+            	else {
+			drop();				// drop
+            	}  
         }
     }
 }
